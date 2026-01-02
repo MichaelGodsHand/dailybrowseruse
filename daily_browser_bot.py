@@ -16,6 +16,11 @@ from typing import Optional
 from urllib.parse import urlparse
 
 import aiohttp
+try:
+    from websockets.exceptions import ConnectionClosedError
+except ImportError:
+    # Fallback if websockets is not directly importable
+    ConnectionClosedError = Exception
 
 from daily import CallClient, Daily
 from PIL import Image
@@ -354,6 +359,23 @@ class DailyBrowserStreamer:
                             logger.warning("⚠️ Timeout getting current page, retrying...")
                             time.sleep(sleep_time)
                             continue
+                        except ConnectionClosedError as conn_err:
+                            logger.error(f"❌ Browser WebSocket connection closed (get_current_page): {conn_err}")
+                            logger.warning("⚠️ Browser connection lost, retrying...")
+                            time.sleep(sleep_time)
+                            continue
+                        except Exception as page_err:
+                            # Catch any other exception from the future
+                            error_type = type(page_err).__name__
+                            error_msg = str(page_err)
+                            # Check if it's a connection-related error
+                            if "ConnectionClosed" in error_type or "connection" in error_msg.lower() or "keepalive" in error_msg.lower():
+                                logger.error(f"❌ Browser connection error (get_current_page): {error_type}: {error_msg}")
+                                logger.warning("⚠️ Browser connection lost, retrying...")
+                            else:
+                                logger.error(f"❌ Error getting current page: {error_type}: {error_msg}")
+                            time.sleep(sleep_time)
+                            continue
                     else:
                         # Fallback: create new event loop (may have issues)
                         loop = asyncio.new_event_loop()
@@ -364,6 +386,23 @@ class DailyBrowserStreamer:
                             )
                         except asyncio.TimeoutError:
                             logger.warning("⚠️ Timeout getting current page (fallback loop), retrying...")
+                            time.sleep(sleep_time)
+                            continue
+                        except ConnectionClosedError as conn_err:
+                            logger.error(f"❌ Browser WebSocket connection closed (get_current_page, fallback): {conn_err}")
+                            logger.warning("⚠️ Browser connection lost, retrying...")
+                            time.sleep(sleep_time)
+                            continue
+                        except Exception as page_err:
+                            # Catch any other exception from the loop
+                            error_type = type(page_err).__name__
+                            error_msg = str(page_err)
+                            # Check if it's a connection-related error
+                            if "ConnectionClosed" in error_type or "connection" in error_msg.lower() or "keepalive" in error_msg.lower():
+                                logger.error(f"❌ Browser connection error (get_current_page, fallback): {error_type}: {error_msg}")
+                                logger.warning("⚠️ Browser connection lost, retrying...")
+                            else:
+                                logger.error(f"❌ Error getting current page (fallback): {error_type}: {error_msg}")
                             time.sleep(sleep_time)
                             continue
                         finally:
@@ -394,6 +433,23 @@ class DailyBrowserStreamer:
                                 logger.error(f"❌ Screenshot TIMEOUT after 10 seconds!")
                                 time.sleep(sleep_time)
                                 continue
+                            except ConnectionClosedError as conn_err:
+                                logger.error(f"❌ Browser WebSocket connection closed: {conn_err}")
+                                logger.warning("⚠️ Browser connection lost, skipping this frame...")
+                                time.sleep(sleep_time)
+                                continue
+                            except Exception as future_err:
+                                # Catch any other exception from the future
+                                error_type = type(future_err).__name__
+                                error_msg = str(future_err)
+                                # Check if it's a connection-related error
+                                if "ConnectionClosed" in error_type or "connection" in error_msg.lower():
+                                    logger.error(f"❌ Browser connection error: {error_type}: {error_msg}")
+                                    logger.warning("⚠️ Browser connection lost, skipping this frame...")
+                                else:
+                                    logger.error(f"❌ Future exception: {error_type}: {error_msg}")
+                                time.sleep(sleep_time)
+                                continue
                         else:
                             # Fallback: use new event loop
                             loop = asyncio.new_event_loop()
@@ -406,6 +462,23 @@ class DailyBrowserStreamer:
                                 logger.error(f"❌ Screenshot TIMEOUT after 10 seconds (fallback loop)!")
                                 time.sleep(sleep_time)
                                 continue
+                            except ConnectionClosedError as conn_err:
+                                logger.error(f"❌ Browser WebSocket connection closed (fallback loop): {conn_err}")
+                                logger.warning("⚠️ Browser connection lost, skipping this frame...")
+                                time.sleep(sleep_time)
+                                continue
+                            except Exception as loop_err:
+                                # Catch any other exception from the loop
+                                error_type = type(loop_err).__name__
+                                error_msg = str(loop_err)
+                                # Check if it's a connection-related error
+                                if "ConnectionClosed" in error_type or "connection" in error_msg.lower():
+                                    logger.error(f"❌ Browser connection error (fallback loop): {error_type}: {error_msg}")
+                                    logger.warning("⚠️ Browser connection lost, skipping this frame...")
+                                else:
+                                    logger.error(f"❌ Loop exception: {error_type}: {error_msg}")
+                                time.sleep(sleep_time)
+                                continue
                             finally:
                                 loop.close()
                         
@@ -414,10 +487,22 @@ class DailyBrowserStreamer:
                         logger.error(f"❌ Screenshot TIMEOUT after 10 seconds!")
                         time.sleep(sleep_time)
                         continue
+                    except ConnectionClosedError as conn_err:
+                        logger.error(f"❌ Browser WebSocket connection closed: {conn_err}")
+                        logger.warning("⚠️ Browser connection lost, skipping this frame...")
+                        time.sleep(sleep_time)
+                        continue
                     except Exception as screenshot_ex:
-                        logger.error(f"❌ Screenshot EXCEPTION: {type(screenshot_ex).__name__}: {screenshot_ex}")
-                        import traceback
-                        logger.error(traceback.format_exc())
+                        error_type = type(screenshot_ex).__name__
+                        error_msg = str(screenshot_ex)
+                        # Check if it's a connection-related error
+                        if "ConnectionClosed" in error_type or "connection" in error_msg.lower() or "keepalive" in error_msg.lower():
+                            logger.error(f"❌ Browser connection error: {error_type}: {error_msg}")
+                            logger.warning("⚠️ Browser connection lost, skipping this frame...")
+                        else:
+                            logger.error(f"❌ Screenshot EXCEPTION: {error_type}: {error_msg}")
+                            import traceback
+                            logger.error(traceback.format_exc())
                         time.sleep(sleep_time)
                         continue
                     
