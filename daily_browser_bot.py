@@ -343,19 +343,29 @@ class DailyBrowserStreamer:
                     # Use main event loop if available, otherwise create new one
                     if self.main_loop and self.main_loop.is_running():
                         # Use run_coroutine_threadsafe to run in main loop
+                        # Increased timeout for Cloud Run (slower startup/initialization)
                         future = asyncio.run_coroutine_threadsafe(
                             self.browser.get_current_page(), 
                             self.main_loop
                         )
-                        page = future.result(timeout=2.0)
+                        try:
+                            page = future.result(timeout=10.0)  # Increased from 2.0 to 10.0 for Cloud Run
+                        except TimeoutError:
+                            logger.warning("⚠️ Timeout getting current page, retrying...")
+                            time.sleep(sleep_time)
+                            continue
                     else:
                         # Fallback: create new event loop (may have issues)
                         loop = asyncio.new_event_loop()
                         asyncio.set_event_loop(loop)
                         try:
                             page = loop.run_until_complete(
-                                asyncio.wait_for(self.browser.get_current_page(), timeout=2.0)
+                                asyncio.wait_for(self.browser.get_current_page(), timeout=10.0)  # Increased from 2.0 to 10.0
                             )
+                        except asyncio.TimeoutError:
+                            logger.warning("⚠️ Timeout getting current page (fallback loop), retrying...")
+                            time.sleep(sleep_time)
+                            continue
                         finally:
                             loop.close()
                     
@@ -378,21 +388,30 @@ class DailyBrowserStreamer:
                                 page.screenshot(), 
                                 self.main_loop
                             )
-                            screenshot_data = future.result(timeout=2.0)
+                            try:
+                                screenshot_data = future.result(timeout=10.0)  # Increased from 2.0 to 10.0 for Cloud Run
+                            except TimeoutError:
+                                logger.error(f"❌ Screenshot TIMEOUT after 10 seconds!")
+                                time.sleep(sleep_time)
+                                continue
                         else:
                             # Fallback: use new event loop
                             loop = asyncio.new_event_loop()
                             asyncio.set_event_loop(loop)
                             try:
                                 screenshot_data = loop.run_until_complete(
-                                    asyncio.wait_for(page.screenshot(), timeout=2.0)
+                                    asyncio.wait_for(page.screenshot(), timeout=10.0)  # Increased from 2.0 to 10.0
                                 )
+                            except asyncio.TimeoutError:
+                                logger.error(f"❌ Screenshot TIMEOUT after 10 seconds (fallback loop)!")
+                                time.sleep(sleep_time)
+                                continue
                             finally:
                                 loop.close()
                         
                         logger.info(f"📸 Screenshot captured successfully: type={type(screenshot_data).__name__}, length={len(screenshot_data) if screenshot_data else 0}")
                     except asyncio.TimeoutError:
-                        logger.error(f"❌ Screenshot TIMEOUT after 2 seconds!")
+                        logger.error(f"❌ Screenshot TIMEOUT after 10 seconds!")
                         time.sleep(sleep_time)
                         continue
                     except Exception as screenshot_ex:
